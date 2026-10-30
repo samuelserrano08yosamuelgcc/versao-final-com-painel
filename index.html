@@ -106,6 +106,19 @@ footer{border-top:1px solid #ffffff18;padding:28px 22px;text-align:center;color:
 .admin-actions .delete{border-color:#a94a4a;color:#ffb0a8}
 @media(max-width:600px){.admin-panel{padding:16px;margin:10px auto}.admin-stats{grid-template-columns:1fr}}
 
+
+.admin-chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+.admin-chart-card{background:#081b12;border:1px solid var(--line);border-radius:14px;padding:18px;min-width:0}
+.admin-chart-card h3{margin:0 0 14px;font-size:1.05rem}
+.chart-bars{display:grid;gap:11px}
+.chart-row{display:grid;grid-template-columns:minmax(90px,1fr) 2fr 30px;align-items:center;gap:9px;font-size:.82rem;color:var(--muted)}
+.chart-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chart-track{height:12px;border-radius:99px;background:#1c3828;overflow:hidden}
+.chart-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--green),var(--lime));min-width:2px;transition:width .4s ease}
+.chart-value{color:var(--lime);text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+.chart-note{color:var(--muted);font-size:.8rem;margin:12px 0 0}
+@media(max-width:700px){.admin-chart-grid{grid-template-columns:1fr}.chart-row{grid-template-columns:95px 1fr 25px}}
+
 </style>
 </head>
 <body>
@@ -258,6 +271,20 @@ footer{border-top:1px solid #ffffff18;padding:28px 22px;text-align:center;color:
    <div class="admin-stat"><strong id="totalTopics">0</strong><span>Assuntos diferentes</span></div>
    <div class="admin-stat"><strong id="latestResponse">—</strong><span>Último envio</span></div>
   </div>
+
+  <div class="admin-chart-grid">
+   <section class="admin-chart-card">
+    <h3>📊 Respostas por assunto</h3>
+    <div class="chart-bars" id="topicChart"><p class="muted">Ainda não há dados para mostrar.</p></div>
+    <p class="chart-note">Distribuição das sugestões recebidas por tema.</p>
+   </section>
+   <section class="admin-chart-card">
+    <h3>📈 Respostas recentes</h3>
+    <div class="chart-bars" id="recentChart"><p class="muted">Ainda não há dados para mostrar.</p></div>
+    <p class="chart-note">Quantidade de respostas por dia nos últimos 7 dias.</p>
+   </section>
+  </div>
+
   <div class="admin-tools">
    <input type="search" id="searchResponses" placeholder="Pesquisar por nome, assunto ou mensagem...">
    <button type="button" id="exportResponses">⬇ Exportar CSV</button>
@@ -335,6 +362,57 @@ document.getElementById('adminPassword').addEventListener('keydown',event=>{
 });
 adminOverlay.addEventListener('click',event=>{if(event.target===adminOverlay)closeAdmin();});
 
+
+function renderCharts(items){
+ const topicHost=document.getElementById('topicChart');
+ const recentHost=document.getElementById('recentChart');
+ topicHost.replaceChildren();recentHost.replaceChildren();
+
+ function addEmpty(host,text){
+  const p=document.createElement('p');p.className='muted';p.textContent=text;host.appendChild(p);
+ }
+ function addBars(host,entries,maxValue){
+  entries.forEach(([label,value])=>{
+   const row=document.createElement('div');row.className='chart-row';
+   const name=document.createElement('span');name.className='chart-label';name.textContent=label;name.title=label;
+   const track=document.createElement('div');track.className='chart-track';
+   const fill=document.createElement('div');fill.className='chart-fill';
+   fill.style.width=(value/maxValue*100)+'%';track.appendChild(fill);
+   const number=document.createElement('strong');number.className='chart-value';number.textContent=value;
+   row.append(name,track,number);host.appendChild(row);
+  });
+ }
+ if(!items.length){
+  addEmpty(topicHost,'Envie uma sugestão pelo formulário para começar a gerar o gráfico.');
+  addEmpty(recentHost,'Os envios aparecerão aqui depois que houver respostas.');
+  return;
+ }
+ const topics={};
+ items.forEach(item=>{topics[item.assunto]=(topics[item.assunto]||0)+1;});
+ const topicEntries=Object.entries(topics).sort((a,b)=>b[1]-a[1]);
+ addBars(topicHost,topicEntries,Math.max(...topicEntries.map(entry=>entry[1])));
+
+ const counts={};
+ const today=new Date();today.setHours(0,0,0,0);
+ const days=[];
+ for(let offset=6;offset>=0;offset--){
+  const day=new Date(today);day.setDate(today.getDate()-offset);
+  const key=[day.getFullYear(),String(day.getMonth()+1).padStart(2,'0'),String(day.getDate()).padStart(2,'0')].join('-');
+  const label=day.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit'});
+  days.push([key,label]);
+  counts[key]=0;
+ }
+ items.forEach(item=>{
+  const parsed=new Date(item.id);
+  if(!Number.isNaN(parsed.getTime())){
+   const key=[parsed.getFullYear(),String(parsed.getMonth()+1).padStart(2,'0'),String(parsed.getDate()).padStart(2,'0')].join('-');
+   if(Object.prototype.hasOwnProperty.call(counts,key))counts[key]++;
+  }
+ });
+ const recentEntries=days.map(([key,label])=>[label,counts[key]]);
+ addBars(recentHost,recentEntries,Math.max(1,...recentEntries.map(entry=>entry[1])));
+}
+
 function renderResponses(){
  const all=getResponses();
  const query=document.getElementById('searchResponses').value.trim().toLowerCase();
@@ -342,6 +420,7 @@ function renderResponses(){
  document.getElementById('totalResponses').textContent=all.length;
  document.getElementById('totalTopics').textContent=new Set(all.map(item=>item.assunto)).size;
  document.getElementById('latestResponse').textContent=all.length?all[0].data.split(' ')[0]:'—';
+ renderCharts(all);
  const list=document.getElementById('adminResponses');
  list.replaceChildren();
  if(!filtered.length){
